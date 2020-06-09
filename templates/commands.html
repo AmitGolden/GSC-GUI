@@ -7,11 +7,13 @@
 <!--Import datetime-->
 
 <head>
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/bootswatch/4.0.0/flatly/bootstrap.min.css">
     <title>Commands</title>
     <script type="text/javascript" src="/static/js/jquery-3.4.1.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/sortablejs@latest/Sortable.min.js"></script>
+    <script type="text/javascript" src="/static/js/materialize.min.js"></script>
     <link href="https://fonts.googleapis.com/icon?family=Material+Icons" rel="stylesheet">
+
+
     <script src="/static/js/side_bar.js"></script>
     <style>
         header,
@@ -33,6 +35,11 @@
         ::placeholder {
             color: #fff;
         }
+
+        textarea {
+            width: 700px;
+            height: 400px;
+        }
     </style>
 
 </head>
@@ -41,7 +48,7 @@
 
     <ul id="slide-out" class="sidenav sidenav-fixed light-blue lighten-3">
         <li class="logo center-align">
-            <img src="/static/logo/logo.png" class="brand-logo" height="200" width="200">
+            <img id="logoImage" src="/static/logo/logo.png" class="brand-logo" height="200" width="200">
         </li>
         <li>
             <div style="margin-left: 30px; margin-right: 30px;" class="input-field">
@@ -56,9 +63,12 @@
         <li onclick="navChange(this)"><a href="/logs">Logs</a></li>
         <li onclick="navChange(this)"><a href="/graphForm">Graphs</a></li>
         <li onclick="navChange(this)"><a href="/acks">Acks</a></li>
+        <li onclick="navChange(this)"><a href="/login">Login<span class="badge badge-warning">New</span></a></li>
+        <li><i><a id="userStatus">You are not logged in. </a><i></li>
 
     </ul>
-
+    <!---->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/bootswatch/4.0.0/flatly/bootstrap.min.css">
     <a href="#" data-target="slide-out" class="sidenav-trigger btn-floating btn-large"><i
             class="material-icons">menu</i></a>
 
@@ -108,14 +118,18 @@
                 title="Type in a name">
             <button class="btn"
                 onclick="savePlaylist(document.getElementById('playlistName').value, playlist)">Save!</button>
+            <button class="btn" id="savePrivatelyBtn" style="display:none;"
+                onclick="savePlaylistPrivately(document.getElementById('playlistName').value, playlist)">Save
+                privately!<span class="badge badge-warning">New</span></button>
             <button class="btn" onclick="sendPlaylistSteps()">Send Step By Step</button>
+            <button data-target="playlsitJson" class="btn modal-trigger">Load Playlist From JSON</button>
+
             <select style="margin-bottom: 16px;" class="select-css" id="playlistNameOptions">
             </select>
-            <button class="btn"
-                onclick="getPlaylist(options.options[options.selectedIndex].innerHTML,playlist)">Get!</button>
+            <button class="btn" hello="world"
+                onclick="getPlaylist(options.options[options.selectedIndex],playlist)">Get!</button>
 
-            <button class="btn"
-                onclick="deletePlaylist(options.options[options.selectedIndex].innerHTML)">Delete!</button>
+            <button class="btn" onclick="deletePlaylist(options.options[options.selectedIndex])">Delete!</button>
 
             <div class="card indigo darken-1">
                 <div class="card-content white-text">
@@ -124,12 +138,22 @@
                     <p>How many Dummy Funcs?</p>
                     <input type="number" id="dummyFuncNum" min="1" max="255" value="1" class="white-text">
                     <p>Select EndNode</p>
-                    <select id="endnode" class="browser-default"></select>
+                    <select id="endnode" class="browser-default" onchange="chnageEndnode()"></select>
                 </div>
             </div>
         </div>
 
-
+        <!-- Modal Structure -->
+        <div id="playlsitJson" class="modal">
+            <div class="modal-content">
+                <h4>Enter Playlist JSON:</h4>
+                <textarea id="playlistJsonInput" cols="30" rows="10"></textarea>
+            </div>
+            <div class="modal-footer">
+                <a href="#!" class="modal-close waves-effect waves-green btn-flat"
+                    onclick="parsePlaylistJSON()">Enter</a>
+            </div>
+        </div>
 
         </div class="white-text">
         <div id="commandBody" style="display:none">
@@ -154,10 +178,10 @@
 <script src="https://www.gstatic.com/firebasejs/7.2.3/firebase-auth.js"></script>
 <script src="https://www.gstatic.com/firebasejs/7.2.3/firebase-firestore.js"></script>
 <script src="https://www.gstatic.com/firebasejs/7.2.3/firebase-database.js"></script>
-<script type="text/javascript" src="/static/js/materialize.min.js"></script>
 
 
 <script>
+    let selectedEndnode;
     var playlistsNames = [];
     var lastPacket = null;
     var st = 0
@@ -166,6 +190,8 @@
     var datetimeCounter = 0;
     var debug = "{{DEBUG}}";
     console.log("DEBUG: " + debug);
+
+    var uid = null;
 
     var regex = new RegExp();
     var results = regex.exec(location.search);
@@ -191,7 +217,10 @@
             document.getElementById("playlistButton").setAttribute("style", "display:none");
         }
     }
-
+    function chnageEndnode() {
+        const select = document.getElementById("endnode");
+        selectedEndnode = select.value;
+    }
     function showParams(show) {
         if (show) {
             document.getElementById("listBody").setAttribute("style", "display:none");
@@ -588,11 +617,14 @@
             <option value=198>198 ADCS Miscellaneous Currents</option>
         `
         if (paramName.search("file type") === 0) {
+            let found = false;
             for (const option of dumpType) {
                 if (option.value == placeholder) {
                     option.setAttribute("selected", "selected");
+                    found = true;
                 }
             }
+            if (!found) dumpType[3].setAttribute("selected", "selected");
             inputContainer.appendChild(dumpType);
         }
         else {
@@ -637,7 +669,7 @@
                     inputContainer.appendChild(charInput);
                     break;
 
-                case ("dateTime"):
+                case ("datetime"):
                     let checked = ''
                     let hours = 0;
                     let mins = 0;
@@ -962,13 +994,21 @@
         endnodesArr = clearEndNodesDuplicates(endnodesArr);
         if (!objectArraysEqual(endnodesArr, endNodes)) {
             const endnodeSelect = document.getElementById("endnode");
-            endnodeSelect.innerHTML = ""
+            endnodeSelect.innerHTML = "";
+            let isCurrEndnodeFound = false;
             for (let i = 0; i < endnodesArr.length; i++) {
                 const e = endnodesArr[i];
                 const option = document.createElement("option");
                 option.innerHTML = e.Name;
                 option.value = e.Id;
                 endnodeSelect.appendChild(option);
+                if (e.Id == selectedEndnode) {
+                    endnodeSelect.value = e.Id;
+                    isCurrEndnodeFound = true;
+                }
+            }
+            if (!isCurrEndnodeFound) {
+                selectedEndnode = endnodeSelect.value;
             }
             endNodes = endnodesArr;
         }
@@ -1061,16 +1101,26 @@
     };
     firebase.initializeApp(config);
 
-    // Get a reference to the database service
-    var database = firebase.database();
-    var options = document.getElementById("playlistNameOptions")
-    database.ref().once("value", function (snapshot) {
-        snapshot.forEach(function (child) {
-            var option = document.createElement("option");
-            option.innerHTML = child.key;
-            options.appendChild(option);
-        })
-    });
+    database = firebase.database();
+
+    var options = document.getElementById("playlistNameOptions");
+    function loadPlaylists(databaseRef, additionalText = "")
+    // Database: firebase.database().ref()
+    {
+        // Get a reference to the database service
+        var options = document.getElementById("playlistNameOptions");
+        databaseRef.once("value", function (snapshot) {
+            snapshot.forEach(function (child) {
+                var option = document.createElement("option");
+                option.innerHTML = child.key + additionalText;
+                option.setAttribute("name", child.key);
+                option.setAttribute("path", child.getRef().path.toString());
+                options.appendChild(option);
+            })
+        });
+
+    }
+    loadPlaylists(firebase.database().ref('public'));
 
     function objToString(obj) {
         let str = "";
@@ -1080,9 +1130,44 @@
 
         return str;
     }
-    function getPlaylist(name, root) {
 
-        var playlistPath = database.ref(name);
+    function parsePlaylistJSON() {
+        const json = document.getElementById('playlistJsonInput').value;
+        const playlist = JSON.parse(`[${json}]`);
+        let commandList = document.getElementById("playlistContainer");
+        commandList.innerHTML = "<div class=\"row commandsTitle\" value=\"HEADER\"><div class=\"column unselectable\">Command</div><div class=\"column unselectable\">Command number</div></div>";
+        for (let i = 0; i < playlist.length; i++) {
+            const command = playlist[i];
+            const cmdID = `(${command.Content.ST},${command.Content.SST})`
+            const strValue = JSON.stringify(command);
+            let newCommand = document.createElement("div");
+            newCommand.setAttribute("class", "row");
+            newCommand.setAttribute("onclick", "showParams(true); let type = parseJinja('" + cmdID + "');generateInputs(type[0],type[1],this.getAttribute('value'));thisCommand=this;");
+            newCommand.setAttribute("id", cmdID);
+            newCommand.setAttribute("draggable", "false");
+            newCommand.setAttribute("inlist", "true");
+            newCommand.setAttribute("value", strValue);
+            let newCommandName = document.createElement("div");
+            newCommandName.setAttribute("class", "column unselectable");
+            if (strValue) {
+                params = objToString(command.Content.Params);
+                params += `Execution time: ${command.Content.ExecutionTime}`;
+                newCommandName.innerHTML = `<abbr title="${params}">${dic[cmdID]}</abbr>`;
+            }
+            else {
+                newCommandName.innerHTML = dic[cmdID];
+            }
+            var newCommandNumber = document.createElement("div");
+            newCommandNumber.setAttribute("class", "column unselectable");
+            newCommandNumber.innerHTML = cmdID;
+            newCommand.appendChild(newCommandName);
+            newCommand.appendChild(newCommandNumber);
+            commandList.appendChild(newCommand);
+        }
+    }
+
+    function getPlaylist(optionItem, root) {
+        var playlistPath = database.ref(optionItem.getAttribute('path'));
         var commandList = document.getElementById("playlistContainer");
         commandList.innerHTML = "<div class=\"row commandsTitle\" value=\"HEADER\"><div class=\"column unselectable\">Command</div><div class=\"column unselectable\">Command number</div></div>";
 
@@ -1116,30 +1201,41 @@
         });
     }
 
-    function deletePlaylist(name, options) {
+    function deletePlaylist(optionItem, options) {
+        if (!confirm("Are you sure you want to delete '" + optionItem.getAttribute('path') + "' playlist from database?")) {
+            return;
+        }
         // Remove item from database
-        var playlistPath = database.ref(name);
+        var playlistPath = database.ref(optionItem.getAttribute('path'));
         playlistPath.remove();
         // Remove item from options
         options.remove();
-
     }
     function savePlaylist(name, root) {
         console.log("   Name: " + name);
-        var playlistPath = database.ref(name);
+        if (name == "") {
+            alert("Error: name must be not empty");
+            return;
+        }
+        var playlistPath = database.ref('public/' + name);
         playlistPath.set({});
         var i = 0;
         while (i < root.children.length && root.children[i].getAttribute("value") != "HEADER") {
-            i++;
+            i++; // Count>
         }
         i++;
-        if (root.children.length <= i) {
+        if (root.children.length <= i) { // >
             return;
         }
-        for (; i < root.children.length - 1; i++) {
+        for (; i < root.children.length - 1; i++) { // >
             var child = root.children[i];
             var id = child.getAttribute("id");
             var value = child.getAttribute("value");
+            if (!value) {
+                alert("Can't save an undefined param")
+                playlistPath.remove();
+                return;
+            }
             var json = {};
             json["id"] = id;
             json["value"] = value;
@@ -1148,12 +1244,62 @@
         var child = root.children[i];
         var id = child.getAttribute("id");
         var value = child.getAttribute("value");
-
+        if (!value) {
+            alert("Can't save an undefined param")
+            playlistPath.remove();
+            return;
+        }
         var json = {};
         json["id"] = id;
         json["value"] = value;
         playlistPath.push(json);
         alert("playlist: " + name + " is saved");
+    }
+
+    function savePlaylistPrivately(name, root) {
+        console.log("   Name: " + name);
+        if (name == "") {
+            alert("Error: name must be not empty");
+            return;
+        }
+        var playlistPath = database.ref(uid + '/' + name);
+        console.log("The uid:" + uid);
+        playlistPath.set({});
+        var i = 0;
+        while (i < root.children.length && root.children[i].getAttribute("value") != "HEADER") { // >
+            i++;
+        }
+        i++;
+        if (root.children.length <= i) { // >
+            return;
+        }
+        for (; i < root.children.length - 1; i++) { // >
+            var child = root.children[i];
+            var id = child.getAttribute("id");
+            var value = child.getAttribute("value");
+            if (!value) {
+                alert("Can't save an undefined param")
+                playlistPath.remove();
+                return;
+            }
+            var json = {};
+            json["id"] = id;
+            json["value"] = value;
+            playlistPath.push(json);
+        }
+        var child = root.children[i];
+        var id = child.getAttribute("id");
+        var value = child.getAttribute("value");
+        if (!value) {
+            alert("Can't save an undefined param")
+            playlistPath.remove();
+            return;
+        }
+        var json = {};
+        json["id"] = id;
+        json["value"] = value;
+        playlistPath.push(json);
+        alert("playlist: " + name + " is saved privately");
     }
 
     function updatePlaylistNames() {
@@ -1166,6 +1312,67 @@
 
             });
         });
+    }
+
+    function initUser() {
+        NOT_LOGGED = "You are not loggin in. Please <u><a href=\"/login\">login</a></u>";
+        LOGGED = "Logged as ";
+        LOGOUT = " <u><a onclick=\"logout()\" href=\"/login\">Logout</a><u>";
+
+        userStatus = document.getElementById("userStatus");
+        firebase.auth().onAuthStateChanged((user) => {
+            if (user != null) {
+                uid = user.uid;
+                if (user.displayName == null) {
+                    userStatus.innerHTML = LOGGED + "Anonymous.";
+
+                }
+                else {
+                    userStatus.innerHTML = LOGGED + user.displayName;
+                    if (user.photoURL != null) {
+                        logoImage = document.getElementById("logoImage");
+                        logoImage.setAttribute('src', user.photoURL);
+                    }
+                }
+
+                document.getElementById("savePrivatelyBtn").style = "";
+                loadPlaylists(firebase.database().ref(user.uid), " (private)");
+
+                userStatus.innerHTML += LOGOUT;
+            }
+            else {
+                userStatus.innerHTML = NOT_LOGGED;
+            }
+            console.log(user);
+        });
+    }
+    initUser();
+    function validateEmail(mail) {
+        if (/^\w+([\.-]?\w+)*@\w+([\.-]?\w+)*(\.\w{2,3})+$/.test(mail)) {
+            return (true);
+        }
+        return (false);
+    }
+
+    function throwError(e) {
+        alert(e);
+    }
+
+    function signIn() {
+        var email = document.getElementById("emailInput").value;
+        var password = document.getElementById("passwordInput").value;
+        if (validateEmail(email)) {
+            firebase.auth().signInWithEmailAndPassword(email, password).catch(e => { throwError(e) });
+        }
+        else {
+            throwError("email is not valid");
+        }
+    }
+    function signInAnonymously() {
+        firebase.auth().signInAnonymously();
+    }
+    function logout() {
+        firebase.auth().signOut();
     }
 
 

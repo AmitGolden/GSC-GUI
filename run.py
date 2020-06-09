@@ -62,7 +62,7 @@ except:
 
 f = open(config["mibPath"], "r")
 
-soup = BeautifulSoup(f.read(), "html.parser")
+soup = BeautifulSoup(f.read().lower(), "html.parser")
 commandNames = []
 commandNumbers = []
 paramNames = []
@@ -104,6 +104,7 @@ dumpWeb = "dump.html"
 graphPage = "paramGraph.html"
 graphForm = "graphForm.html"
 commandAcksWeb = "commandAcks.html"
+loginWeb = "login.html"
 
 
 def IPAddrValidate():
@@ -191,6 +192,9 @@ def praseCSV(directory, paramNames, params={}):
 def parseCSVfile(fileName, paramNames):
     if fileName == None:
         return {}
+    if not fileName.endswith('.csv'):
+        print("There is a non-CSV file in the telemetry directory, please delete it!!")
+        print("Path:" + fileName)
 
     params = {}
     f = open(fileName, "r")
@@ -220,6 +224,9 @@ def createLogsDict(eventLogDirectory, erroLogDirectory):
 def getParamsFromCSV(fileName):
     if fileName == None:
         return []
+    if not fileName.endswith('.csv'):
+        print("There is a non-CSV file in the telemetry directory, please delete it!!")
+        print("Path:" + fileName)
 
     f = open(fileName, "r")
 
@@ -238,6 +245,10 @@ def getParamsFromCSV(fileName):
 def parseCSVfileForGraph(fileName, parameterName):
     if fileName == None:
         return None
+
+    if not fileName.endswith('.csv'):
+        print("There is a non-CSV file in the telemetry directory, please delete it!!")
+        print("Path:" + fileName)
 
     f = open(fileName, "r")
 
@@ -279,6 +290,9 @@ def getParameterFromDirectory(directoryName, parameterName):
 def getUnitsFromCSV(fileName, paramNames):
     if fileName == None:
         return {}
+    if not fileName.endswith('.csv'):
+        print("There is a non-CSV file in the telemetry directory, please delete it!!")
+        print("Path:" + fileName)
 
     units = {}
     f = open(fileName, "r")
@@ -286,6 +300,7 @@ def getUnitsFromCSV(fileName, paramNames):
         for i in range(len(paramNames)):
             if line.startswith(paramNames[i]):
                 units[paramNames[i]] = getUnit(line)
+    f.close()
     return units
 
 
@@ -299,7 +314,7 @@ def getNewestFileInDir(directory):
 def findTelemetryInMIB(serviceType, serviceSubType):
     f = open(config["mibPath"], "r")
 
-    soup = BeautifulSoup(f.read(), "html.parser")
+    soup = BeautifulSoup(f.read().lower(), "html.parser")
 
     sts = soup.find("gscmib").find("telemetry").find_all(
         "servicetype")
@@ -373,16 +388,18 @@ def parseDumpDirNames(dirs, path):
 
     for d in dirs:
         # Parse service type, subtype and telemetry name from directory name
-        parsedName = re.search("ST-(\d*)\ SST-(\d*)\ (.*)$", d)
+        try:
+            parsedName = re.search("ST-(\d*)\ SST-(\d*)\ (.*)$", d)
+            st = parsedName[1]
+            sst = parsedName[2]
+            name = parsedName[3]
 
-        st = parsedName[1]
-        sst = parsedName[2]
-        name = parsedName[3]
-
-        dumpNames[st + "-" + sst] = {
-            "name": name,
-            "path": path + d
-        }
+            dumpNames[st + "-" + sst] = {
+                "name": name,
+                "path": path + d
+            }
+        except:
+            pass
 
     return dumpNames
 
@@ -492,44 +509,51 @@ def dump():
 @app.route('/paramGraph')
 def parameterGraph():
     dumpNames = getDumpNames()
-    st = request.args.get("st")
-    sst = request.args.get("sst")
-    parameterName = request.args.get('paramName')
-    key = str(st) + "-" + str(sst)
+    params = json.loads(request.args.get("params"))
     isLineGraph = request.args.get("isLineGraph")
 
     try:
-        options = getTelemetryOptions(str(st), str(sst))[parameterName]
+        options = getTelemetryOptions(
+            str(params[0]["st"]), str(params[0]["sst"]))[params[0]["paramName"]]
 
     except:
         options = {"rangeStart": "", "rangeEnd": ""}
 
-    paramValues = getParameterFromDirectory(
-        dumpDirNames[key]["path"], parameterName)
+    paramValues = []
+    for param in params:
+        key = str(param['st']) + "-" + str(param["sst"])
+        paramValues.append(getParameterFromDirectory(
+            dumpDirNames[key]["path"], param["paramName"]))
 
     startDate = request.args.get("startDate")
     endDate = request.args.get("endDate")
     startDate = datetime.strptime(startDate, '%d/%m/%Y %H:%M')
-    endDate = None
+
     try:
         endDate = datetime.strptime(endDate, '%d/%m/%Y %H:%M')
     except:
         endDate = datetime.today()
 
-    forDeletion = []
-    for keyDate in paramValues:
-        date = datetime.strptime(keyDate, '%d/%m/%Y %H:%M:%S')
-        if not(startDate <= date <= endDate):
-            forDeletion.append(keyDate)
-    for keyDate in forDeletion:
-        del paramValues[keyDate]
+    for param in paramValues:
+        forDeletion = []
+        for keyDate in param:
+            date = datetime.strptime(keyDate, '%d/%m/%Y %H:%M:%S')
+            if not(startDate <= date <= endDate):
+                forDeletion.append(keyDate)
+        for keyDate in forDeletion:
+            del param[keyDate]
 
+    key = str(params[0]['st']) + "-" + str(params[0]["sst"])
     f = getNewestFileInDir(dumpDirNames[key]["path"])
-    params = getParamsFromCSV(f)
-    units = getUnitsFromCSV(f, params)
-    unit = units[parameterName]
+    paramscsv = getParamsFromCSV(f)
+    units = getUnitsFromCSV(f, paramscsv)
+    unit = units[params[0]["paramName"]]
 
-    return render_template(graphPage, paramData=paramValues, paramOptions=options, paramName=parameterName, paramUnit=unit, isLineGraph=isLineGraph)
+    paramNames = []
+    for param in params:
+        paramNames.append(param["paramName"])
+
+    return render_template(graphPage, paramData=paramValues, paramOptions=options, paramName=paramNames, paramUnit=unit, isLineGraph=isLineGraph)
 
 
 @app.route('/getDumpNames')
@@ -543,6 +567,11 @@ def getDumpNames():
                 "sst": split[1]
             }
     return dumpTypes
+
+
+@app.route('/login')
+def loginPage():
+    return render_template(loginWeb)
 
 
 @app.route('/graphForm')
@@ -583,7 +612,7 @@ def GUIv2():
 def getEndNode():
     global endNodes
     return {"endNodes": endNodes}
-    # return {"endNodes": [{"Name": "System.Object", "Id": "2"}, {"Name": "System.Object", "Id": "3"}, {"Name": "System.Object", "Id": "4"}, {"Name": "System.Object", "Id": "5"}, {"Name": "System.Object", "Id": "6"}]}
+    # return {"endNodes": [{"Name": "blabla", "Id": "3"}, {"Name": "System.Object", "Id": "2"}, {"Name": "Sscdc", "Id": "4"}]}
 
 
 @app.route('/acks', methods=['GET', 'POST'])
@@ -628,9 +657,6 @@ def commandAcks():
 dumpDirNames = parseDumpDirNames(getSubDirs(
     config["telemetryFolderPath"]), config["telemetryFolderPath"])
 numOfAcks = len(os.listdir(dumpDirNames["13-90"]["path"]))
-# I'm Alon Grossman and I have scribbled on the GSC-GUI code
-
-# webbrowser.open('http://127.0.0.1:5000/')
 
 
 def socketInputLoop():
@@ -646,11 +672,17 @@ def socketInputLoop():
             time.sleep(1.0)
         else:
             try:
-                res = s.recv(1024)
-            except:
+                s.settimeout(3.0)
+                while True:
+                    try:
+                        res = s.recv(1024)
+                        gscBuffer += res.decode("ascii")
+                    except socket.timeout:
+                        break
+            except socket.error:
                 isGSCconnected = False
                 continue
-            gscBuffer += res.decode("ascii")
+
             if gscBuffer != "":
                 packets = splitJSON(gscBuffer)
                 dealWithGSCres(packets)
@@ -705,3 +737,7 @@ def signal_handler(sig, frame):
 signal.signal(signal.SIGINT, signal_handler)
 
 app.run(debug=config["debugMode"], host='0.0.0.0')
+
+# I'm Alon Grossman and I have scribbled on the GSC-GUI code
+
+# webbrowser.open('http://127.0.0.1:5000/')
